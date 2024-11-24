@@ -1,0 +1,153 @@
+# Import required libraries
+import sys
+
+try:
+    import pandas as pd
+    import numpy as np
+    from sentence_transformers import SentenceTransformer
+    from sklearn.metrics.pairwise import cosine_similarity
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import torch
+except ImportError as e:
+    print(f"Error: Missing required library '{e.name}'. Install it using `pip install {e.name}`.")
+    sys.exit()
+
+# Dataset path
+dataset_path = 'train.csv'
+ # Replace with your actual file path
+
+# Step 1: Load the dataset
+def load_dataset(path):
+    """
+    Load the dataset into a pandas DataFrame.
+    """
+    try:
+        data = pd.read_csv(path)
+        print(f"Dataset loaded successfully with {data.shape[0]} rows and {data.shape[1]} columns.")
+        return data
+    except FileNotFoundError:
+        print("Error: Dataset file not found. Please check the file path.")
+        sys.exit()
+    except Exception as e:
+        print(f"Unexpected error while loading dataset: {str(e)}")
+        sys.exit()
+
+# Step 2: Preprocess the dataset
+def preprocess_dataset(data, sample_size=100):
+    """
+    Clean and sample the dataset for processing.
+    """
+    data = data.dropna(subset=['question1', 'question2'])
+    sampled_data = data.sample(n=min(sample_size, len(data)), random_state=42).reset_index(drop=True)
+    print(f"Sampled {len(sampled_data)} rows for analysis.")
+    return sampled_data
+
+# Step 3: Initialize Sentence-BERT model
+def initialize_model():
+    """
+    Load the Sentence-BERT model for generating embeddings.
+    """
+    try:
+        print("Loading Sentence-BERT model...")
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        print("Model loaded successfully.")
+        return model
+    except Exception as e:
+        print(f"Error initializing Sentence-BERT model: {str(e)}")
+        sys.exit()
+
+# Step 4: Compute cosine similarity and classify
+def fuzzy_similarity(score):
+    """
+    Classify similarity score into fuzzy categories.
+    """
+    if score < 0.4:
+        return "Low"
+    elif score < 0.7:
+        return "Medium"
+    else:
+        return "High"
+
+def calculate_similarity(model, question1, question2):
+    """
+    Compute cosine similarity and fuzzy category for a question pair.
+    """
+    try:
+        embeddings = model.encode([question1, question2])
+        similarity = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
+        category = fuzzy_similarity(similarity)
+        return similarity, category
+    except Exception as e:
+        print(f"Error calculating similarity for questions:\nQ1: {question1}\nQ2: {question2}\nError: {str(e)}")
+        return None, None
+
+# Step 5: Process and evaluate the dataset
+def process_dataset(model, data):
+    """
+    Process the dataset, compute similarities, and classify them.
+    """
+    results = []
+    for i, row in data.iterrows():
+        q1 = row['question1']
+        q2 = row['question2']
+        similarity, category = calculate_similarity(model, q1, q2)
+        if similarity is not None:
+            results.append({'Q1': q1, 'Q2': q2, 'Cosine Similarity': similarity, 'Fuzzy Category': category})
+        if (i + 1) % 10 == 0:
+            print(f"Processed {i + 1}/{len(data)} pairs...")
+    return results
+
+# Step 6: Visualize similarity scores
+def visualize_results(results):
+    """
+    Plot a histogram of cosine similarity scores.
+    """
+    similarities = [result['Cosine Similarity'] for result in results]
+    plt.figure(figsize=(8, 6))
+    sns.histplot(similarities, bins=20, kde=True, color='blue')
+    plt.title('Distribution of Cosine Similarity Scores', fontsize=16)
+    plt.xlabel('Cosine Similarity', fontsize=14)
+    plt.ylabel('Frequency', fontsize=14)
+    plt.grid(True)
+    plt.show()
+
+# Step 7: Save results to a CSV file
+def save_results(results, output_path='similarity_results.csv'):
+    """
+    Save the processed results to a CSV file.
+    """
+    try:
+        df = pd.DataFrame(results)
+        df.to_csv(output_path, index=False)
+        print(f"Results saved to {output_path}")
+    except Exception as e:
+        print(f"Error saving results: {str(e)}")
+
+# Main function
+def main():
+    # Load and preprocess the dataset
+    data = load_dataset(dataset_path)
+    sampled_data = preprocess_dataset(data, sample_size=20)
+
+    # Initialize the Sentence-BERT model
+    model = initialize_model()
+
+    # Process the dataset to compute similarities
+    print("Processing dataset...")
+    results = process_dataset(model, sampled_data)
+
+    # Display example outputs
+    print("\nExample Results:")
+    for i, result in enumerate(results[:5]):
+        print(f"Q1: {result['Q1']}\nQ2: {result['Q2']}\nCosine Similarity: {result['Cosine Similarity']:.2f}\nFuzzy Category: {result['Fuzzy Category']}\n")
+
+    # Visualize the results
+    visualize_results(results)
+
+    # Save results to a CSV file
+    save_results(results)
+
+# Run the main function
+if __name__ == "__main__":
+    main()
